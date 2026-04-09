@@ -54,3 +54,9 @@ export function updateTask(taskId, updates) {
     body: JSON.stringify(updates),
   });
 }
+
+/** Получить данные календаря для диапазона дат */
+export function fetchCalendar(fromDate, toDate) {
+  const telegramId = getTelegramId();
+  return apiRequest(`/calendar?from=${fromDate}&to=${toDate}&telegram_id=${telegramId}`);
+}
