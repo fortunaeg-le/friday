@@ -14,7 +14,7 @@ from telegram.ext import (
 )
 
 from db.database import async_session
-from db.crud import get_or_create_user, create_task
+from db.crud import get_or_create_user, create_task, ensure_task_reminder
 from bot.keyboards.task_keyboards import category_keyboard, skip_duration_keyboard
 
 logger = logging.getLogger(__name__)
@@ -174,6 +174,8 @@ async def add_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             duration_min=ud.get("task_duration"),
             category=category,
         )
+        # Автоматически создать напоминание
+        await ensure_task_reminder(session, task)
 
     time_str = scheduled_at.strftime("%H:%M")
     dur_str = f", {task.duration_min} мин" if task.duration_min else ""
