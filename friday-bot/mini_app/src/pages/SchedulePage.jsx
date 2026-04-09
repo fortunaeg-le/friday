@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import TaskRow from '../components/TaskRow';
+import MiniCalendar from '../components/MiniCalendar';
 import { fetchTasks, createTask, updateTask } from '../api/client';
 import { formatDateDisplay, toISODate } from '../utils/time';
 
@@ -24,6 +25,7 @@ export default function SchedulePage() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   /** Загрузка задач на выбранную дату */
   const loadTasks = useCallback(async (date) => {
@@ -52,6 +54,11 @@ export default function SchedulePage() {
   const goBack = () => setCurrentDate((d) => shiftDate(d, -1));
   const goForward = () => setCurrentDate((d) => shiftDate(d, 1));
   const goToday = () => setCurrentDate(new Date());
+
+  /** Выбор даты из мини-календаря */
+  const handleCalendarSelect = (date) => {
+    setCurrentDate(date);
+  };
 
   /** Сохранение новой задачи */
   const handleSave = async (data) => {
@@ -99,7 +106,7 @@ export default function SchedulePage() {
       <div className="flex items-center justify-between px-4 py-3 bg-tg-secondary">
         <button onClick={goBack} className="text-tg-button text-xl px-2">◀</button>
         <button
-          onClick={goToday}
+          onClick={() => setCalendarOpen(true)}
           className={`text-sm font-medium ${isToday ? 'text-tg-button' : 'text-tg-text'}`}
         >
           {formatDateDisplay(currentDate)}
@@ -146,6 +153,14 @@ export default function SchedulePage() {
           </>
         )}
       </div>
+      {/* Мини-календарь */}
+      {calendarOpen && (
+        <MiniCalendar
+          selectedDate={currentDate}
+          onSelectDate={handleCalendarSelect}
+          onClose={() => setCalendarOpen(false)}
+        />
+      )}
     </div>
   );
 }
