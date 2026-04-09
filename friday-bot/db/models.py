@@ -129,6 +129,7 @@ class Task(Base):
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)  # работа | здоровье | личное | другое
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | done | partial | skipped
     completion_pct: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0-100
+    completion_check_sent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     project_subtask_id: Mapped[int | None] = mapped_column(
         ForeignKey("project_subtasks.id"), nullable=True
     )

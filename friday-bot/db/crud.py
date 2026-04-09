@@ -341,3 +341,66 @@ async def get_projects_near_deadline(
     )
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+# --- Отметка выполнения ---
+
+async def get_tasks_for_completion_check(
+    session: AsyncSession,
+    user_id: int,
+    target_date: date,
+) -> list[Task]:
+    """Получить задачи дня у которых не была отправлена проверка выполнения.
+
+    Только задачи со статусом 'pending' и непустым scheduled_at.
+    """
+    day_start = datetime.combine(target_date, datetime.min.time())
+    day_end = datetime.combine(target_date, datetime.max.time())
+    stmt = (
+        select(Task)
+        .where(
+            and_(
+                Task.user_id == user_id,
+                Task.scheduled_at >= day_start,
+                Task.scheduled_at <= day_end,
+                Task.scheduled_at != None,  # noqa: E711
+                Task.status == "pending",
+                Task.completion_check_sent == False,  # noqa: E712
+            )
+        )
+        .order_by(Task.scheduled_at)
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def mark_completion_check_sent(session: AsyncSession, task_id: int) -> None:
+    """Пометить задачу как «проверка выполнения отправлена»."""
+    stmt = select(Task).where(Task.id == task_id)
+    result = await session.execute(stmt)
+    task = result.scalar_one_or_none()
+    if task:
+        task.completion_check_sent = True
+        await session.commit()
+
+
+async def is_quiet_day_for_user(
+    session: AsyncSession,
+    user_id: int,
+    check_date: date,
+) -> bool:
+    """Проверить, является ли дата тихим днём для пользователя."""
+    stmt = select(QuietDay).where(
+        and_(
+            QuietDay.user_id == user_id,
+            QuietDay.is_active == True,  # noqa: E712
+        )
+    )
+    result = await session.execute(stmt)
+    quiet_days = result.scalars().all()
+    for qd in quiet_days:
+        if qd.specific_date and qd.specific_date == check_date:
+            return True
+        if qd.day_of_week is not None and qd.day_of_week == check_date.weekday():
+            return True
+    return False

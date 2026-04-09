@@ -7,15 +7,21 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from telegram.ext import Application
 
+from core.config import settings
 from db.database import async_session
 from db.crud import (
     get_all_users,
     get_unsent_reminders,
     mark_reminder_sent,
     generate_reminders_for_date,
+    get_tasks_by_date,
+    get_tasks_for_completion_check,
+    mark_completion_check_sent,
+    is_quiet_day_for_user,
 )
 from bot.notifications.morning_summary import send_morning_summary
 from bot.notifications.task_reminder import send_task_reminder
+from bot.notifications.completion_check import compute_check_at, send_completion_check
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +64,45 @@ async def job_morning_summaries(bot) -> None:
     logger.info("Утренние сводки отправлены: %d/%d", sent, len(users))
 
 
+async def job_check_completions(bot) -> None:
+    """Каждую минуту: отправить проверки выполнения для завершившихся задач."""
+    now = datetime.utcnow()
+    today = now.date()
+    async with async_session() as session:
+        users = await get_all_users(session)
+        for user in users:
+            # Не отправлять в тихий день
+            if await is_quiet_day_for_user(session, user.id, today):
+                continue
+
+            pending_tasks = await get_tasks_for_completion_check(session, user.id, today)
+            if not pending_tasks:
+                continue
+
+            # Все задачи дня для определения "следующей задачи"
+            all_today = await get_tasks_by_date(session, user.id, today)
+            starts = sorted(
+                [t.scheduled_at for t in all_today if t.scheduled_at],
+                key=lambda dt: dt,
+            )
+
+            for task in pending_tasks:
+                # Найти начало следующей задачи после текущей
+                next_start = next(
+                    (s for s in starts if s > task.scheduled_at), None
+                )
+                check_at = compute_check_at(task, next_start, settings.default_task_duration)
+                if check_at <= now:
+                    try:
+                        await send_completion_check(bot, task, user)
+                        await mark_completion_check_sent(session, task.id)
+                    except Exception as exc:
+                        logger.error(
+                            "Ошибка отправки completion check task_id=%d: %s",
+                            task.id, exc,
+                        )
+
+
 async def job_generate_reminders() -> None:
     """Ежедневно в 00:05 UTC: создать напоминания для задач на завтра."""
     tomorrow = date.today() + timedelta(days=1)
@@ -92,6 +137,16 @@ def setup_scheduler(bot_app: Application) -> AsyncIOScheduler:
         minutes=1,
         args=[bot],
         id="check_reminders",
+        replace_existing=True,
+    )
+
+    # Отметки выполнения — каждую минуту
+    scheduler.add_job(
+        job_check_completions,
+        trigger="interval",
+        minutes=1,
+        args=[bot],
+        id="check_completions",
         replace_existing=True,
     )
 

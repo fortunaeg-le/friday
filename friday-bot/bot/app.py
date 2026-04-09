@@ -5,6 +5,11 @@ from telegram.ext import Application
 from core.config import settings
 from bot.handlers.start import start_handler
 from bot.handlers.add_task import add_task_handler
+from bot.handlers.completion import (
+    completion_partial_handler,
+    completion_done_handler,
+    completion_skip_handler,
+)
 
 
 def create_bot_app() -> Application:
@@ -19,5 +24,9 @@ def create_bot_app() -> Application:
     # Регистрация хендлеров
     application.add_handler(start_handler)
     application.add_handler(add_task_handler)
+    # ConversationHandler должен быть раньше простых callback-хендлеров
+    application.add_handler(completion_partial_handler)
+    application.add_handler(completion_done_handler)
+    application.add_handler(completion_skip_handler)
 
     return application
