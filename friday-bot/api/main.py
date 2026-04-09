@@ -9,6 +9,7 @@ from telegram import Update
 from core.config import settings
 from bot.app import create_bot_app
 from api.routers.health import router as health_router
+from api.routers.tasks import router as tasks_router
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ app = FastAPI(title="Friday Bot API", version="0.1.0", lifespan=lifespan)
 
 # Роутеры
 app.include_router(health_router)
+app.include_router(tasks_router)
 
 
 @app.post("/webhook")

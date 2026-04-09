@@ -4,6 +4,7 @@ from telegram.ext import Application
 
 from core.config import settings
 from bot.handlers.start import start_handler
+from bot.handlers.add_task import add_task_handler
 
 
 def create_bot_app() -> Application:
@@ -17,5 +18,6 @@ def create_bot_app() -> Application:
 
     # Регистрация хендлеров
     application.add_handler(start_handler)
+    application.add_handler(add_task_handler)
 
     return application
