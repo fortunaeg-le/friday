@@ -46,6 +46,10 @@ async def create_task(
     description: str | None = None,
 ) -> Task:
     """Создать новую задачу."""
+    # Убираем timezone — БД хранит naive datetime (UTC)
+    if scheduled_at and scheduled_at.tzinfo is not None:
+        scheduled_at = scheduled_at.replace(tzinfo=None)
+
     task = Task(
         user_id=user_id,
         title=title,
@@ -118,6 +122,9 @@ async def update_task(
 
     for key, value in kwargs.items():
         if hasattr(task, key):
+            # Убираем timezone из datetime — БД хранит naive (UTC)
+            if isinstance(value, datetime) and value.tzinfo is not None:
+                value = value.replace(tzinfo=None)
             setattr(task, key, value)
 
     await session.commit()
