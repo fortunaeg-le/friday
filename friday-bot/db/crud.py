@@ -4,8 +4,9 @@ from datetime import datetime, date, timedelta
 
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from db.models import User, Task, QuietDay
+from db.models import User, Task, QuietDay, Reminder, NotificationDefault, Project
 
 
 async def get_or_create_user(session: AsyncSession, telegram_id: int) -> tuple[User, bool]:
@@ -201,3 +202,142 @@ async def update_task(
     await session.commit()
     await session.refresh(task)
     return task
+
+
+# --- Напоминания ---
+
+async def get_all_users(session: AsyncSession) -> list[User]:
+    """Получить всех пользователей."""
+    result = await session.execute(select(User))
+    return list(result.scalars().all())
+
+
+async def get_remind_before_min(session: AsyncSession, user_id: int) -> int:
+    """Получить задержку напоминания (мин) для пользователя.
+
+    Сначала ищет пользовательскую настройку, при отсутствии — берёт из defaults.
+    """
+    from db.models import NotificationSetting
+    stmt = select(NotificationSetting).where(
+        and_(
+            NotificationSetting.user_id == user_id,
+            NotificationSetting.type == "task_reminder",
+        )
+    )
+    result = await session.execute(stmt)
+    user_setting = result.scalar_one_or_none()
+    if user_setting and user_setting.remind_before_min is not None:
+        return user_setting.remind_before_min
+
+    # Fallback на defaults
+    stmt_def = select(NotificationDefault).where(NotificationDefault.type == "task_reminder")
+    result_def = await session.execute(stmt_def)
+    default = result_def.scalar_one_or_none()
+    if default and default.remind_before_min is not None:
+        return default.remind_before_min
+    return 15  # абсолютный fallback
+
+
+async def ensure_task_reminder(
+    session: AsyncSession,
+    task: Task,
+    remind_before_min: int | None = None,
+) -> Reminder | None:
+    """Создать или обновить напоминание для задачи.
+
+    Если remind_before_min не передан — берётся из настроек пользователя/defaults.
+    Возвращает None если у задачи нет scheduled_at или remind_at уже в прошлом.
+    """
+    if not task.scheduled_at:
+        return None
+
+    if remind_before_min is None:
+        remind_before_min = await get_remind_before_min(session, task.user_id)
+
+    remind_at = task.scheduled_at - timedelta(minutes=remind_before_min)
+    if remind_at <= datetime.utcnow():
+        return None  # напоминание уже в прошлом
+
+    # Проверить существующее напоминание
+    stmt = select(Reminder).where(Reminder.task_id == task.id)
+    result = await session.execute(stmt)
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.remind_at = remind_at
+        existing.is_sent = False  # сбрасываем флаг при обновлении задачи
+        await session.commit()
+        return existing
+
+    reminder = Reminder(task_id=task.id, remind_at=remind_at)
+    session.add(reminder)
+    await session.commit()
+    await session.refresh(reminder)
+    return reminder
+
+
+async def get_unsent_reminders(session: AsyncSession, before: datetime) -> list[Reminder]:
+    """Получить все неотправленные напоминания с remind_at ≤ before.
+
+    Подгружает связанные task и user через selectinload.
+    """
+    stmt = (
+        select(Reminder)
+        .options(
+            selectinload(Reminder.task).selectinload(Task.user)
+        )
+        .where(
+            and_(
+                Reminder.is_sent == False,  # noqa: E712
+                Reminder.remind_at <= before,
+            )
+        )
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def mark_reminder_sent(session: AsyncSession, reminder_id: int) -> None:
+    """Отметить напоминание как отправленное."""
+    stmt = select(Reminder).where(Reminder.id == reminder_id)
+    result = await session.execute(stmt)
+    reminder = result.scalar_one_or_none()
+    if reminder:
+        reminder.is_sent = True
+        await session.commit()
+
+
+async def generate_reminders_for_date(
+    session: AsyncSession,
+    user_id: int,
+    target_date: date,
+) -> None:
+    """Создать напоминания для всех задач пользователя на указанный день."""
+    remind_before = await get_remind_before_min(session, user_id)
+    tasks = await get_tasks_by_date(session, user_id, target_date)
+    for task in tasks:
+        await ensure_task_reminder(session, task, remind_before)
+
+
+async def get_projects_near_deadline(
+    session: AsyncSession,
+    user_id: int,
+    days_ahead: int = 1,
+) -> list[Project]:
+    """Получить активные проекты с дедлайном в ближайшие days_ahead дней."""
+    today = date.today()
+    deadline_limit = today + timedelta(days=days_ahead)
+    stmt = (
+        select(Project)
+        .where(
+            and_(
+                Project.user_id == user_id,
+                Project.status == "active",
+                Project.deadline >= today,
+                Project.deadline <= deadline_limit,
+            )
+        )
+        .order_by(Project.deadline)
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())

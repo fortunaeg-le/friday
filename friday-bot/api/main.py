@@ -8,20 +8,22 @@ from telegram import Update
 
 from core.config import settings
 from bot.app import create_bot_app
+from bot.scheduler import setup_scheduler
 from api.routers.health import router as health_router
 from api.routers.tasks import router as tasks_router
 from api.routers.calendar import router as calendar_router
 
 logger = logging.getLogger(__name__)
 
-# Глобальная ссылка на Telegram Application
+# Глобальные ссылки
 bot_app = None
+scheduler = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup / shutdown — инициализация и остановка бота."""
-    global bot_app
+    """Startup / shutdown — инициализация и остановка бота и планировщика."""
+    global bot_app, scheduler
 
     # Настройка логирования
     logging.basicConfig(
@@ -42,9 +44,16 @@ async def lifespan(app: FastAPI):
     )
     logger.info("Webhook установлен: %s", webhook_url)
 
+    # Запуск планировщика
+    scheduler = setup_scheduler(bot_app)
+    scheduler.start()
+    logger.info("Планировщик запущен")
+
     yield
 
     # Shutdown
+    scheduler.shutdown(wait=False)
+    logger.info("Планировщик остановлен")
     await bot_app.stop()
     await bot_app.shutdown()
     logger.info("Бот остановлен")

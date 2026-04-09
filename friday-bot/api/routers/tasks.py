@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import get_session
-from db.crud import create_task, get_tasks_by_date, update_task, get_user_by_telegram_id
+from db.crud import create_task, get_tasks_by_date, update_task, get_user_by_telegram_id, ensure_task_reminder
 from api.schemas.tasks import TaskCreate, TaskUpdate, TaskResponse
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -47,6 +47,8 @@ async def add_task(
         category=body.category,
         description=body.description,
     )
+    # Автоматически создать напоминание
+    await ensure_task_reminder(session, task)
     return task
 
 
@@ -65,4 +67,6 @@ async def patch_task(
     if task is None:
         raise HTTPException(status_code=404, detail="Задача не найдена")
 
+    # Пересоздать напоминание при обновлении (время могло измениться)
+    await ensure_task_reminder(session, task)
     return task
