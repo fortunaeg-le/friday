@@ -23,10 +23,12 @@ export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   /** Загрузка задач на выбранную дату */
   const loadTasks = useCallback(async (date) => {
     setLoading(true);
+    setError(null);
     try {
       const data = await fetchTasks(toISODate(date));
       setTasks(data.map((t) => ({
@@ -35,6 +37,7 @@ export default function SchedulePage() {
       })));
     } catch (err) {
       console.error('Ошибка загрузки задач:', err);
+      setError(`Загрузка: ${err.message}`);
       setTasks([]);
     } finally {
       setLoading(false);
@@ -58,15 +61,16 @@ export default function SchedulePage() {
     scheduled.setHours(h, m, 0, 0);
 
     try {
+      setError(null);
       const created = await createTask({
         title: data.title,
         scheduled_at: scheduled.toISOString(),
         duration_min: data.duration_min,
       });
-      // Перезагрузить список
       loadTasks(currentDate);
     } catch (err) {
       console.error('Ошибка создания задачи:', err);
+      setError(`Сохранение: ${err.message}`);
     }
   };
 
@@ -102,6 +106,13 @@ export default function SchedulePage() {
         </button>
         <button onClick={goForward} className="text-tg-button text-xl px-2">▶</button>
       </div>
+
+      {/* Ошибки */}
+      {error && (
+        <div className="mx-3 mt-2 p-2 bg-red-100 text-red-700 text-xs rounded">
+          {error}
+        </div>
+      )}
 
       {/* Список задач */}
       <div className="flex-1 overflow-y-auto">
