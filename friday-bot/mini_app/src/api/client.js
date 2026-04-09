@@ -18,6 +18,7 @@ export async function apiRequest(endpoint, options = {}) {
   const headers = {
     'Content-Type': 'application/json',
     'X-Telegram-Init-Data': getInitData(),
+    'ngrok-skip-browser-warning': '1',
     ...options.headers,
   };
 
