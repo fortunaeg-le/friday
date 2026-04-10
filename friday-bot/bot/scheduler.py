@@ -31,6 +31,7 @@ from bot.notifications.completion_check import compute_check_at, send_completion
 from bot.notifications.window_suggestion import find_free_windows, send_window_suggestion
 from bot.notifications.stats_report import send_stats_report
 from bot.notifications.quiet_day_summary import send_quiet_day_summary_request
+from bot.notifications.evening_reflection import send_evening_reflection_request
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +189,32 @@ async def job_generate_reminders() -> None:
                 )
 
 
+async def job_evening_reflections(bot) -> None:
+    """Ежедневно в 21:00 UTC: запросить вечернюю рефлексию.
+
+    НЕ отправляется в тихий день (для тихих — quiet_day_summary в 21:30).
+    Проверяет настройку evening_reflection.enabled для каждого пользователя.
+    """
+    today = date.today()
+    async with async_session() as session:
+        users = await get_all_users(session)
+    for user in users:
+        async with async_session() as session:
+            # Тихий день — пропускаем (в 21:30 придёт quiet_day_summary)
+            if await is_quiet_day_for_user(session, user.id, today):
+                continue
+            # Проверяем настройку enabled
+            from db.crud import get_notification_settings
+            settings = await get_notification_settings(session, user.id)
+            cfg = next((s for s in settings if s["type"] == "evening_reflection"), None)
+            if cfg and not cfg["enabled"]:
+                continue
+        try:
+            await send_evening_reflection_request(bot, user)
+        except Exception as exc:
+            logger.error("Ошибка evening_reflection user=%d: %s", user.telegram_id, exc)
+
+
 async def job_quiet_day_summaries(bot) -> None:
     """Ежедневно в 21:30 UTC: запросить рефлексию у пользователей в тихом дне."""
     today = date.today()
@@ -282,6 +309,15 @@ def setup_scheduler(bot_app: Application) -> AsyncIOScheduler:
         minutes=30,
         args=[bot],
         id="window_suggestions",
+        replace_existing=True,
+    )
+
+    # Вечерний дневник — 21:00 UTC (не в тихий день)
+    scheduler.add_job(
+        job_evening_reflections,
+        trigger=CronTrigger(hour=21, minute=0, timezone="UTC"),
+        args=[bot],
+        id="evening_reflections",
         replace_existing=True,
     )
 

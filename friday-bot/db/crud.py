@@ -212,6 +212,79 @@ async def get_all_users(session: AsyncSession) -> list[User]:
     return list(result.scalars().all())
 
 
+ALL_NOTIFICATION_TYPES = [
+    "morning_summary",
+    "task_reminder",
+    "completion_check",
+    "window_suggestion",
+    "weekly_report",
+    "monthly_report",
+    "evening_reflection",
+    "quiet_day_summary",
+]
+
+
+async def get_notification_settings(
+    session: AsyncSession,
+    user_id: int,
+) -> list[dict]:
+    """Получить настройки уведомлений пользователя с fallback на defaults.
+
+    Возвращает список dict с полями: type, enabled, sound_enabled, remind_before_min.
+    """
+    from db.models import NotificationSetting
+
+    # Пользовательские настройки
+    stmt = select(NotificationSetting).where(NotificationSetting.user_id == user_id)
+    result = await session.execute(stmt)
+    user_settings = {s.type: s for s in result.scalars().all()}
+
+    # Дефолты
+    defaults_result = await session.execute(select(NotificationDefault))
+    defaults = {d.type: d for d in defaults_result.scalars().all()}
+
+    merged = []
+    for ntype in ALL_NOTIFICATION_TYPES:
+        us = user_settings.get(ntype)
+        df = defaults.get(ntype)
+        merged.append({
+            "type": ntype,
+            "enabled": us.enabled if (us and us.enabled is not None) else (df.enabled if df else True),
+            "sound_enabled": us.sound_enabled if (us and us.sound_enabled is not None) else (df.sound_enabled if df else False),
+            "remind_before_min": us.remind_before_min if (us and us.remind_before_min is not None) else (df.remind_before_min if df else None),
+        })
+    return merged
+
+
+async def update_notification_setting(
+    session: AsyncSession,
+    user_id: int,
+    ntype: str,
+    **kwargs,
+) -> None:
+    """Обновить (или создать) настройку уведомления для пользователя.
+
+    kwargs: enabled, sound_enabled, remind_before_min
+    """
+    from db.models import NotificationSetting
+
+    stmt = select(NotificationSetting).where(
+        and_(NotificationSetting.user_id == user_id, NotificationSetting.type == ntype)
+    )
+    result = await session.execute(stmt)
+    setting = result.scalar_one_or_none()
+
+    if setting is None:
+        setting = NotificationSetting(user_id=user_id, type=ntype)
+        session.add(setting)
+
+    for key, value in kwargs.items():
+        if hasattr(setting, key):
+            setattr(setting, key, value)
+
+    await session.commit()
+
+
 async def get_remind_before_min(session: AsyncSession, user_id: int) -> int:
     """Получить задержку напоминания (мин) для пользователя.
 

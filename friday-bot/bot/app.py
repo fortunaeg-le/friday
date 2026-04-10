@@ -26,6 +26,16 @@ from bot.notifications.quiet_day_summary import (
     qd_summary_text_handler,
     qd_summary_skip_handler,
 )
+from bot.handlers.reflection import reflection_text_handler, reflection_skip_handler
+from bot.handlers.export import export_handler
+from bot.handlers.settings import (
+    settings_handler,
+    settings_open_handler,
+    settings_toggle_handler,
+    settings_sound_handler,
+    settings_setmin_handler,
+    settings_back_handler,
+)
 
 
 def create_bot_app() -> Application:
@@ -52,6 +62,16 @@ def create_bot_app() -> Application:
     application.add_handler(qd_summary_skip_handler)
     # qd_summary_text_handler — низкий приоритет (group=1): перехватывает только ожидающих
     application.add_handler(qd_summary_text_handler, group=1)
+    # reflection_text_handler — группа 1 (ниже приоритет)
+    application.add_handler(reflection_skip_handler)
+    application.add_handler(reflection_text_handler, group=1)
+    application.add_handler(export_handler)
+    application.add_handler(settings_handler)
+    application.add_handler(settings_open_handler)
+    application.add_handler(settings_toggle_handler)
+    application.add_handler(settings_sound_handler)
+    application.add_handler(settings_setmin_handler)
+    application.add_handler(settings_back_handler)
     # ConversationHandler должен быть раньше простых callback-хендлеров
     application.add_handler(completion_partial_handler)
     application.add_handler(completion_done_handler)
