@@ -30,13 +30,18 @@ from bot.notifications.task_reminder import send_task_reminder
 from bot.notifications.completion_check import compute_check_at, send_completion_check
 from bot.notifications.window_suggestion import find_free_windows, send_window_suggestion
 from bot.notifications.stats_report import send_stats_report
+from bot.notifications.quiet_day_summary import send_quiet_day_summary_request
 
 logger = logging.getLogger(__name__)
 
 
 async def job_check_reminders(bot) -> None:
-    """Каждую минуту: проверить и отправить все просроченные напоминания."""
+    """Каждую минуту: проверить и отправить все просроченные напоминания.
+
+    В тихий день напоминания НЕ отправляются.
+    """
     now = datetime.utcnow()
+    today = now.date()
     async with async_session() as session:
         reminders = await get_unsent_reminders(session, before=now)
         if not reminders:
@@ -44,6 +49,11 @@ async def job_check_reminders(bot) -> None:
         logger.info("Найдено %d напоминаний для отправки", len(reminders))
         for reminder in reminders:
             try:
+                user = reminder.task.user
+                # Тихий день → не отправлять напоминания (только пометить как sent)
+                if await is_quiet_day_for_user(session, user.id, today):
+                    await mark_reminder_sent(session, reminder.id)
+                    continue
                 await send_task_reminder(bot, reminder)
                 await mark_reminder_sent(session, reminder.id)
             except Exception as exc:
@@ -54,14 +64,19 @@ async def job_check_reminders(bot) -> None:
 
 
 async def job_morning_summaries(bot) -> None:
-    """Ежедневно в 08:00 UTC: отправить утренние сводки всем пользователям."""
+    """Ежедневно в 08:00 UTC: отправить утренние сводки всем пользователям.
+
+    В тихий день — отправляем БЕЗ ЗВУКА (silent=True).
+    """
     logger.info("Запуск рассылки утренних сводок")
+    today = date.today()
     async with async_session() as session:
         users = await get_all_users(session)
         sent = 0
         for user in users:
             try:
-                ok = await send_morning_summary(bot, user, session)
+                silent = await is_quiet_day_for_user(session, user.id, today)
+                ok = await send_morning_summary(bot, user, session, silent=silent)
                 if ok:
                     sent += 1
             except Exception as exc:
@@ -173,6 +188,21 @@ async def job_generate_reminders() -> None:
                 )
 
 
+async def job_quiet_day_summaries(bot) -> None:
+    """Ежедневно в 21:30 UTC: запросить рефлексию у пользователей в тихом дне."""
+    today = date.today()
+    async with async_session() as session:
+        users = await get_all_users(session)
+    for user in users:
+        async with async_session() as session:
+            if not await is_quiet_day_for_user(session, user.id, today):
+                continue
+        try:
+            await send_quiet_day_summary_request(bot, user)
+        except Exception as exc:
+            logger.error("Ошибка quiet_day_summary user=%d: %s", user.telegram_id, exc)
+
+
 async def job_weekly_stats(bot) -> None:
     """Воскресенье 20:00 UTC: отправить еженедельный отчёт всем пользователям."""
     logger.info("Рассылка еженедельной статистики")
@@ -252,6 +282,15 @@ def setup_scheduler(bot_app: Application) -> AsyncIOScheduler:
         minutes=30,
         args=[bot],
         id="window_suggestions",
+        replace_existing=True,
+    )
+
+    # Вечерняя сводка тихого дня — 21:30 UTC
+    scheduler.add_job(
+        job_quiet_day_summaries,
+        trigger=CronTrigger(hour=21, minute=30, timezone="UTC"),
+        args=[bot],
+        id="quiet_day_summaries",
         replace_existing=True,
     )
 
