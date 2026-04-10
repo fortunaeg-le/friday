@@ -60,3 +60,42 @@ export function fetchCalendar(fromDate, toDate) {
   const telegramId = getTelegramId();
   return apiRequest(`/calendar?from=${fromDate}&to=${toDate}&telegram_id=${telegramId}`);
 }
+
+/** Получить список проектов */
+export function fetchProjects(status = 'active') {
+  const telegramId = getTelegramId();
+  return apiRequest(`/projects?telegram_id=${telegramId}&status=${status}`);
+}
+
+/** Создать проект */
+export function createProject(project) {
+  const telegramId = getTelegramId();
+  return apiRequest(`/projects?telegram_id=${telegramId}`, {
+    method: 'POST',
+    body: JSON.stringify(project),
+  });
+}
+
+/** Получить подзадачи проекта */
+export function fetchSubtasks(projectId) {
+  const telegramId = getTelegramId();
+  return apiRequest(`/projects/${projectId}/subtasks?telegram_id=${telegramId}`);
+}
+
+/** Добавить подзадачу к проекту */
+export function createSubtask(projectId, subtask) {
+  const telegramId = getTelegramId();
+  return apiRequest(`/projects/${projectId}/subtasks?telegram_id=${telegramId}`, {
+    method: 'POST',
+    body: JSON.stringify(subtask),
+  });
+}
+
+/** Обновить статус подзадачи */
+export function updateSubtaskStatus(projectId, subtaskId, status) {
+  const telegramId = getTelegramId();
+  return apiRequest(`/projects/${projectId}/subtasks/${subtaskId}?telegram_id=${telegramId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
