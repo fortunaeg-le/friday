@@ -99,7 +99,7 @@ def upgrade() -> None:
         sa.Column("category", sa.String(50), nullable=True),
         sa.Column("status", sa.String(20), server_default="pending"),
         sa.Column("completion_pct", sa.Integer, nullable=True),
-        sa.Column("project_subtask_id", sa.Integer, sa.ForeignKey("project_subtasks.id"), nullable=True),
+        sa.Column("subtask_of", sa.Integer, sa.ForeignKey("project_subtasks.id"), nullable=True),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
 

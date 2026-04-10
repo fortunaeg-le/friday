@@ -16,9 +16,11 @@ from db.crud import (
     generate_reminders_for_date,
     get_tasks_by_date,
     get_tasks_for_completion_check,
-    mark_completion_check_sent,
     is_quiet_day_for_user,
 )
+
+# In-memory множество task_id для которых уже отправлена проверка выполнения
+_sent_completion_checks: set[int] = set()
 from bot.notifications.morning_summary import send_morning_summary
 from bot.notifications.task_reminder import send_task_reminder
 from bot.notifications.completion_check import compute_check_at, send_completion_check
@@ -87,7 +89,8 @@ async def job_check_completions(bot) -> None:
             )
 
             for task in pending_tasks:
-                # Найти начало следующей задачи после текущей
+                if task.id in _sent_completion_checks:
+                    continue
                 next_start = next(
                     (s for s in starts if s > task.scheduled_at), None
                 )
@@ -95,7 +98,7 @@ async def job_check_completions(bot) -> None:
                 if check_at <= now:
                     try:
                         await send_completion_check(bot, task, user)
-                        await mark_completion_check_sent(session, task.id)
+                        _sent_completion_checks.add(task.id)
                     except Exception as exc:
                         logger.error(
                             "Ошибка отправки completion check task_id=%d: %s",

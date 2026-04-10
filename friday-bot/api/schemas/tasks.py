@@ -35,7 +35,7 @@ class TaskResponse(BaseModel):
     category: str | None = None
     status: str
     completion_pct: int | None = None
-    project_subtask_id: int | None = None
+    subtask_of: int | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

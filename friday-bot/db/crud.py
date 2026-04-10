@@ -365,23 +365,12 @@ async def get_tasks_for_completion_check(
                 Task.scheduled_at <= day_end,
                 Task.scheduled_at != None,  # noqa: E711
                 Task.status == "pending",
-                Task.completion_check_sent == False,  # noqa: E712
             )
         )
         .order_by(Task.scheduled_at)
     )
     result = await session.execute(stmt)
     return list(result.scalars().all())
-
-
-async def mark_completion_check_sent(session: AsyncSession, task_id: int) -> None:
-    """Пометить задачу как «проверка выполнения отправлена»."""
-    stmt = select(Task).where(Task.id == task_id)
-    result = await session.execute(stmt)
-    task = result.scalar_one_or_none()
-    if task:
-        task.completion_check_sent = True
-        await session.commit()
 
 
 async def is_quiet_day_for_user(
