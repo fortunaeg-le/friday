@@ -6,7 +6,7 @@ from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from db.models import User, Task, QuietDay, Reminder, NotificationDefault, Project
+from db.models import User, Task, QuietDay, Reminder, NotificationDefault, Project, ProjectSubtask
 
 
 async def get_or_create_user(session: AsyncSession, telegram_id: int) -> tuple[User, bool]:
@@ -317,6 +317,116 @@ async def generate_reminders_for_date(
     tasks = await get_tasks_by_date(session, user_id, target_date)
     for task in tasks:
         await ensure_task_reminder(session, task, remind_before)
+
+
+# --- Проекты ---
+
+async def create_project(
+    session: AsyncSession,
+    user_id: int,
+    title: str,
+    description: str | None = None,
+    deadline: date | None = None,
+) -> Project:
+    """Создать новый проект."""
+    project = Project(
+        user_id=user_id,
+        title=title,
+        description=description,
+        deadline=deadline,
+        status="active",
+    )
+    session.add(project)
+    await session.commit()
+    await session.refresh(project)
+    return project
+
+
+async def add_subtask(
+    session: AsyncSession,
+    project_id: int,
+    title: str,
+    duration_min: int | None = None,
+    order_index: int = 0,
+) -> ProjectSubtask:
+    """Добавить подзадачу к проекту."""
+    subtask = ProjectSubtask(
+        project_id=project_id,
+        title=title,
+        duration_min=duration_min,
+        order_index=order_index,
+        status="pending",
+    )
+    session.add(subtask)
+    await session.commit()
+    await session.refresh(subtask)
+    return subtask
+
+
+async def get_projects(
+    session: AsyncSession,
+    user_id: int,
+    status: str = "active",
+) -> list[Project]:
+    """Получить проекты пользователя по статусу (с загрузкой подзадач)."""
+    stmt = (
+        select(Project)
+        .options(selectinload(Project.subtasks))
+        .where(
+            and_(
+                Project.user_id == user_id,
+                Project.status == status,
+            )
+        )
+        .order_by(Project.deadline.asc().nullslast(), Project.created_at.asc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_subtasks(
+    session: AsyncSession,
+    project_id: int,
+) -> list[ProjectSubtask]:
+    """Получить подзадачи проекта, отсортированные по order_index."""
+    stmt = (
+        select(ProjectSubtask)
+        .where(ProjectSubtask.project_id == project_id)
+        .order_by(ProjectSubtask.order_index, ProjectSubtask.created_at)
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def update_subtask_status(
+    session: AsyncSession,
+    subtask_id: int,
+    status: str,
+) -> ProjectSubtask | None:
+    """Обновить статус подзадачи. Возвращает None если подзадача не найдена."""
+    stmt = select(ProjectSubtask).where(ProjectSubtask.id == subtask_id)
+    result = await session.execute(stmt)
+    subtask = result.scalar_one_or_none()
+    if subtask is None:
+        return None
+    subtask.status = status
+    await session.commit()
+    await session.refresh(subtask)
+    return subtask
+
+
+async def get_project_by_id(
+    session: AsyncSession,
+    project_id: int,
+) -> Project | None:
+    """Получить проект по id с загрузкой подзадач."""
+    stmt = (
+        select(Project)
+        .options(selectinload(Project.subtasks))
+        .where(Project.id == project_id)
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
 
 
 async def get_projects_near_deadline(
