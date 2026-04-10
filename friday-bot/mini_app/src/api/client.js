@@ -99,3 +99,9 @@ export function updateSubtaskStatus(projectId, subtaskId, status) {
     body: JSON.stringify({ status }),
   });
 }
+
+/** Получить статистику за период (week | month | all) */
+export function fetchStats(period = 'week') {
+  const telegramId = getTelegramId();
+  return apiRequest(`/stats?telegram_id=${telegramId}&period=${period}`);
+}

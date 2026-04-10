@@ -16,6 +16,7 @@ from bot.handlers.suggestion import (
     suggestion_skip_handler,
     suggestion_another_handler,
 )
+from bot.handlers.stats import stats_handler
 
 
 def create_bot_app() -> Application:
@@ -35,6 +36,7 @@ def create_bot_app() -> Application:
     application.add_handler(suggestion_start_handler)
     application.add_handler(suggestion_skip_handler)
     application.add_handler(suggestion_another_handler)
+    application.add_handler(stats_handler)
     # ConversationHandler должен быть раньше простых callback-хендлеров
     application.add_handler(completion_partial_handler)
     application.add_handler(completion_done_handler)

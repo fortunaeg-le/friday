@@ -13,6 +13,7 @@ from api.routers.health import router as health_router
 from api.routers.tasks import router as tasks_router
 from api.routers.calendar import router as calendar_router
 from api.routers.projects import router as projects_router
+from api.routers.stats import router as stats_router
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ app.include_router(health_router)
 app.include_router(tasks_router)
 app.include_router(calendar_router)
 app.include_router(projects_router)
+app.include_router(stats_router)
 
 
 @app.post("/webhook")
