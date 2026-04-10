@@ -105,3 +105,18 @@ export function fetchStats(period = 'week') {
   const telegramId = getTelegramId();
   return apiRequest(`/stats?telegram_id=${telegramId}&period=${period}`);
 }
+
+/** Получить настройки уведомлений */
+export function fetchSettings() {
+  const telegramId = getTelegramId();
+  return apiRequest(`/settings?telegram_id=${telegramId}`);
+}
+
+/** Обновить настройку уведомления */
+export function updateSetting(ntype, updates) {
+  const telegramId = getTelegramId();
+  return apiRequest(`/settings/${ntype}?telegram_id=${telegramId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+}

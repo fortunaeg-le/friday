@@ -14,6 +14,7 @@ from api.routers.tasks import router as tasks_router
 from api.routers.calendar import router as calendar_router
 from api.routers.projects import router as projects_router
 from api.routers.stats import router as stats_router
+from api.routers.settings import router as settings_router
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ app.include_router(tasks_router)
 app.include_router(calendar_router)
 app.include_router(projects_router)
 app.include_router(stats_router)
+app.include_router(settings_router)
 
 
 @app.post("/webhook")
