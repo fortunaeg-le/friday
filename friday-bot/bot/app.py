@@ -11,6 +11,11 @@ from bot.handlers.completion import (
     completion_skip_handler,
 )
 from bot.handlers.project import project_handler, projects_list_handler
+from bot.handlers.suggestion import (
+    suggestion_start_handler,
+    suggestion_skip_handler,
+    suggestion_another_handler,
+)
 
 
 def create_bot_app() -> Application:
@@ -27,6 +32,9 @@ def create_bot_app() -> Application:
     application.add_handler(add_task_handler)
     application.add_handler(project_handler)
     application.add_handler(projects_list_handler)
+    application.add_handler(suggestion_start_handler)
+    application.add_handler(suggestion_skip_handler)
+    application.add_handler(suggestion_another_handler)
     # ConversationHandler должен быть раньше простых callback-хендлеров
     application.add_handler(completion_partial_handler)
     application.add_handler(completion_done_handler)
