@@ -32,6 +32,7 @@ class TaskResponse(BaseModel):
     title: str
     description: str | None = None
     scheduled_at: datetime | None = None
+    task_date: date | None = None
     duration_min: int | None = None
     category: str | None = None
     status: str

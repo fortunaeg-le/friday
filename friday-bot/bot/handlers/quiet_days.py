@@ -84,7 +84,6 @@ async def quietday_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def handle_qd_weekday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Callback: переключить день недели."""
     query = update.callback_query
-    await query.answer()
     day_of_week = int(query.data.split(":")[2])
 
     async with async_session() as session:
@@ -151,8 +150,12 @@ async def cancel_qd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 # ConversationHandler для ввода даты
+# entry_points включает и кнопку «Добавить дату», чтобы бот перешёл в QD_DATE_INPUT
 quiet_days_handler = ConversationHandler(
-    entry_points=[CommandHandler("quietday", quietday_start)],
+    entry_points=[
+        CommandHandler("quietday", quietday_start),
+        CallbackQueryHandler(handle_qd_add_date_prompt, pattern=r"^qd:add_date$"),
+    ],
     states={
         QD_DATE_INPUT: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_qd_date_input),
@@ -161,6 +164,5 @@ quiet_days_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel_qd)],
 )
 
-# Callback-хендлеры — регистрировать отдельно (вне conversation)
+# Callback-хендлер переключения дня недели — регистрируется отдельно (вне conversation)
 qd_weekday_handler = CallbackQueryHandler(handle_qd_weekday, pattern=r"^qd:wd:\d+$")
-qd_add_date_handler = CallbackQueryHandler(handle_qd_add_date_prompt, pattern=r"^qd:add_date$")
