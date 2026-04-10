@@ -129,14 +129,13 @@ class Task(Base):
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)  # работа | здоровье | личное | другое
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | done | partial | skipped
     completion_pct: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0-100
-    completion_check_sent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    project_subtask_id: Mapped[int | None] = mapped_column(
+    subtask_of: Mapped[int | None] = mapped_column(
         ForeignKey("project_subtasks.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="tasks")
-    project_subtask: Mapped["ProjectSubtask | None"] = relationship(back_populates="tasks")
+    project_subtask: Mapped["ProjectSubtask | None"] = relationship(back_populates="tasks", foreign_keys=[subtask_of])
     reminders: Mapped[list["Reminder"]] = relationship(back_populates="task", cascade="all, delete-orphan")
 
 
