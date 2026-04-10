@@ -20,7 +20,6 @@ from bot.handlers.stats import stats_handler
 from bot.handlers.quiet_days import (
     quiet_days_handler,
     qd_weekday_handler,
-    qd_add_date_handler,
 )
 from bot.notifications.quiet_day_summary import (
     qd_summary_text_handler,
@@ -58,13 +57,12 @@ def create_bot_app() -> Application:
     application.add_handler(stats_handler)
     application.add_handler(quiet_days_handler)
     application.add_handler(qd_weekday_handler)
-    application.add_handler(qd_add_date_handler)
     application.add_handler(qd_summary_skip_handler)
-    # qd_summary_text_handler — низкий приоритет (group=1): перехватывает только ожидающих
+    # qd_summary_text_handler — group=1: перехватывает только пользователей в очереди QD
     application.add_handler(qd_summary_text_handler, group=1)
-    # reflection_text_handler — группа 1 (ниже приоритет)
     application.add_handler(reflection_skip_handler)
-    application.add_handler(reflection_text_handler, group=1)
+    # reflection_text_handler — group=2: независимо от qd_summary_text_handler
+    application.add_handler(reflection_text_handler, group=2)
     application.add_handler(export_handler)
     application.add_handler(settings_handler)
     application.add_handler(settings_open_handler)

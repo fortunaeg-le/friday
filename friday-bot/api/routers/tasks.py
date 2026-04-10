@@ -57,6 +57,18 @@ async def add_task(
     return task
 
 
+@router.get("/partial", response_model=list[TaskResponse])
+async def list_partial_tasks(
+    telegram_id: int = Query(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """Получить частично выполненные задачи пользователя."""
+    user = await get_user_by_telegram_id(session, telegram_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    return await get_partial_tasks_for_user(session, user.id)
+
+
 @router.patch("/{task_id}", response_model=TaskResponse)
 async def patch_task(
     task_id: int,
@@ -87,15 +99,3 @@ async def remove_task(
     ok = await delete_task(session, task_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Задача не найдена")
-
-
-@router.get("/partial", response_model=list[TaskResponse])
-async def list_partial_tasks(
-    telegram_id: int = Query(...),
-    session: AsyncSession = Depends(get_session),
-):
-    """Получить частично выполненные задачи пользователя."""
-    user = await get_user_by_telegram_id(session, telegram_id)
-    if user is None:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return await get_partial_tasks_for_user(session, user.id)
