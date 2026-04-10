@@ -29,6 +29,7 @@ from bot.notifications.morning_summary import send_morning_summary
 from bot.notifications.task_reminder import send_task_reminder
 from bot.notifications.completion_check import compute_check_at, send_completion_check
 from bot.notifications.window_suggestion import find_free_windows, send_window_suggestion
+from bot.notifications.stats_report import send_stats_report
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,30 @@ async def job_generate_reminders() -> None:
                 )
 
 
+async def job_weekly_stats(bot) -> None:
+    """Воскресенье 20:00 UTC: отправить еженедельный отчёт всем пользователям."""
+    logger.info("Рассылка еженедельной статистики")
+    async with async_session() as session:
+        users = await get_all_users(session)
+    for user in users:
+        try:
+            await send_stats_report(bot, user, "week")
+        except Exception as exc:
+            logger.error("Ошибка weekly stats user=%d: %s", user.telegram_id, exc)
+
+
+async def job_monthly_stats(bot) -> None:
+    """1-е число 20:00 UTC: отправить ежемесячный отчёт всем пользователям."""
+    logger.info("Рассылка ежемесячной статистики")
+    async with async_session() as session:
+        users = await get_all_users(session)
+    for user in users:
+        try:
+            await send_stats_report(bot, user, "month")
+        except Exception as exc:
+            logger.error("Ошибка monthly stats user=%d: %s", user.telegram_id, exc)
+
+
 def setup_scheduler(bot_app: Application) -> AsyncIOScheduler:
     """Создать и настроить планировщик.
 
@@ -227,6 +252,24 @@ def setup_scheduler(bot_app: Application) -> AsyncIOScheduler:
         minutes=30,
         args=[bot],
         id="window_suggestions",
+        replace_existing=True,
+    )
+
+    # Еженедельный отчёт статистики — воскресенье 20:00 UTC
+    scheduler.add_job(
+        job_weekly_stats,
+        trigger=CronTrigger(day_of_week="sun", hour=20, minute=0, timezone="UTC"),
+        args=[bot],
+        id="weekly_stats",
+        replace_existing=True,
+    )
+
+    # Ежемесячный отчёт статистики — 1-е число 20:00 UTC
+    scheduler.add_job(
+        job_monthly_stats,
+        trigger=CronTrigger(day=1, hour=20, minute=0, timezone="UTC"),
+        args=[bot],
+        id="monthly_stats",
         replace_existing=True,
     )
 
