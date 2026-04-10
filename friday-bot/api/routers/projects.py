@@ -14,10 +14,14 @@ from db.crud import (
     get_subtasks,
     update_subtask_status,
     get_project_by_id,
+    delete_project,
+    update_project,
+    update_subtask,
 )
 from api.schemas.projects import (
     ProjectCreate,
     ProjectResponse,
+    ProjectUpdate,
     SubtaskCreate,
     SubtaskResponse,
     SubtaskStatusUpdate,
@@ -64,6 +68,44 @@ async def create_new_project(
     return project
 
 
+@router.patch("/{project_id}", response_model=ProjectResponse)
+async def patch_project(
+    project_id: int,
+    body: ProjectUpdate,
+    telegram_id: int = Query(...),
+):
+    """Обновить проект (название, дедлайн, статус)."""
+    async with async_session() as session:
+        project = await get_project_by_id(session, project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        user, _ = await get_or_create_user(session, telegram_id)
+        if project.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        updates = body.model_dump(exclude_unset=True, exclude_none=True)
+        project = await update_project(session, project_id, **updates)
+        project = await get_project_by_id(session, project_id)
+    return project
+
+
+@router.delete("/{project_id}", status_code=204)
+async def remove_project(
+    project_id: int,
+    telegram_id: int = Query(...),
+):
+    """Удалить проект вместе с подзадачами."""
+    async with async_session() as session:
+        project = await get_project_by_id(session, project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        user, _ = await get_or_create_user(session, telegram_id)
+        if project.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        ok = await delete_project(session, project_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+
 @router.get("/{project_id}/subtasks", response_model=list[SubtaskResponse])
 async def list_subtasks(project_id: int, telegram_id: int = Query(...)):
     """Получить подзадачи проекта."""
@@ -103,14 +145,14 @@ async def create_subtask(
 
 
 @router.patch("/{project_id}/subtasks/{subtask_id}", response_model=SubtaskResponse)
-async def patch_subtask_status(
+async def patch_subtask(
     project_id: int,
     subtask_id: int,
     body: SubtaskStatusUpdate,
     telegram_id: int = Query(...),
 ):
-    """Обновить статус подзадачи."""
-    if body.status not in ("pending", "done", "skipped"):
+    """Обновить подзадачу (статус и/или название)."""
+    if body.status and body.status not in ("pending", "done", "skipped"):
         raise HTTPException(status_code=422, detail="Invalid status")
     async with async_session() as session:
         project = await get_project_by_id(session, project_id)
@@ -119,7 +161,8 @@ async def patch_subtask_status(
         user, _ = await get_or_create_user(session, telegram_id)
         if project.user_id != user.id:
             raise HTTPException(status_code=403, detail="Forbidden")
-        subtask = await update_subtask_status(session, subtask_id, body.status)
+        updates = body.model_dump(exclude_unset=True, exclude_none=True)
+        subtask = await update_subtask(session, subtask_id, **updates)
         if subtask is None:
             raise HTTPException(status_code=404, detail="Subtask not found")
     return subtask

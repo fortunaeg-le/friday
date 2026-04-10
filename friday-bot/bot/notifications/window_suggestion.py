@@ -99,3 +99,43 @@ async def send_window_suggestion(
             user.telegram_id, exc,
         )
         return False
+
+
+async def send_partial_task_suggestion(
+    bot: Bot,
+    user: User,
+    task: Task,
+    window_start: datetime,
+    window_end: datetime,
+) -> bool:
+    """Предложить пользователю вернуться к частично выполненной задаче."""
+    gap_min   = int((window_end - window_start).total_seconds() / 60)
+    start_str = window_start.strftime("%H:%M")
+    end_str   = window_end.strftime("%H:%M")
+
+    text = (
+        f"💡 <b>Свободное окно {start_str}–{end_str}</b> ({gap_min} мин)\n\n"
+        f"У тебя есть незавершённая задача:\n"
+        f"🔶 <b>{task.title}</b>\n\n"
+        f"Хочешь продолжить?"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("▶️ Продолжить", callback_data=f"partial:resume:{task.id}")],
+        [InlineKeyboardButton("⏭ Отложить",   callback_data="suggestion:skip")],
+    ])
+
+    try:
+        await bot.send_message(
+            chat_id=user.telegram_id,
+            text=text,
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+        return True
+    except Exception as exc:
+        logger.error(
+            "Ошибка отправки partial_suggestion user=%d: %s",
+            user.telegram_id, exc,
+        )
+        return False

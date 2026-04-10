@@ -1,6 +1,6 @@
 """Pydantic-схемы для задач (запросы/ответы API)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel
 
 
@@ -8,6 +8,7 @@ class TaskCreate(BaseModel):
     """Создание задачи."""
     title: str
     scheduled_at: datetime | None = None
+    task_date: date | None = None
     duration_min: int | None = None
     category: str | None = None
     description: str | None = None

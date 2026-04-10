@@ -3,22 +3,28 @@ import { formatTimeInput } from '../utils/time';
 
 /**
  * Строка задачи в ежедневнике.
- * Поля: время (автоформатирование), название, длительность (опц.).
- * spaceCount — сколько пробелов нужно ввести для автозаполнения нулей (1 или 2).
+ * Props:
+ *   task        — объект задачи или null (новая строка)
+ *   onSave      — callback(data) для новой задачи
+ *   onUpdate    — callback(id, data) для существующей задачи
+ *   onDelete    — callback(id) для удаления задачи
+ *   onStatus    — callback(id, status) для смены статуса
+ *   spaceCount  — кол-во пробелов для триггера автозаполнения (1 или 2)
  */
-export default function TaskRow({ task, onSave, onUpdate, spaceCount = 1 }) {
-  const [time, setTime] = useState(task?.timeStr || '');
-  const [title, setTitle] = useState(task?.title || '');
-  const [duration, setDuration] = useState(task?.duration_min ?? '');
+export default function TaskRow({ task, onSave, onUpdate, onDelete, onStatus, spaceCount = 1 }) {
+  const [time, setTime]           = useState(task?.timeStr || '');
+  const [title, setTitle]         = useState(task?.title || '');
+  const [duration, setDuration]   = useState(task?.duration_min ?? '');
   const [timeFormatted, setTimeFormatted] = useState(!!task?.timeStr);
-  const titleRef = useRef(null);
-  const saved = useRef(false);
+  const containerRef = useRef(null);
+  const titleRef     = useRef(null);
+  const saved        = useRef(false);
 
   // Синхронизация при загрузке задач с сервера
   useEffect(() => {
-    if (task?.timeStr) { setTime(task.timeStr); setTimeFormatted(true); }
-    if (task?.title) setTitle(task.title);
-    if (task?.duration_min != null) setDuration(task.duration_min);
+    if (task?.timeStr !== undefined) { setTime(task.timeStr || ''); setTimeFormatted(!!task.timeStr); }
+    if (task?.title !== undefined)   setTitle(task.title);
+    if (task?.duration_min != null)  setDuration(task.duration_min);
   }, [task?.id]);
 
   /** Автоформатирование времени при потере фокуса */
@@ -28,12 +34,15 @@ export default function TaskRow({ task, onSave, onUpdate, spaceCount = 1 }) {
     if (formatted) {
       setTime(formatted);
       setTimeFormatted(true);
-      // Фокус переходит на поле задачи
       titleRef.current?.focus();
+    } else {
+      // невалидное — сбросить
+      setTime('');
+      setTimeFormatted(false);
     }
   };
 
-  /** Обработка ввода времени: пробельный триггер автозаполнения */
+  /** Пробельный триггер автозаполнения */
   const handleTimeChange = (e) => {
     const val = e.target.value;
     const trigger = ' '.repeat(spaceCount);
@@ -53,19 +62,24 @@ export default function TaskRow({ task, onSave, onUpdate, spaceCount = 1 }) {
     setTimeFormatted(false);
   };
 
-  /** Сохранение при потере фокуса или Enter */
+  /** Сохранение — вызывается когда фокус покидает весь row */
   const handleSave = () => {
     if (saved.current) return;
-    if (!time || !title.trim()) return;
+    if (!title.trim()) return; // минимум — название
 
-    const formatted = formatTimeInput(time);
-    if (!formatted) return;
+    // Время может быть пустым (задача без времени)
+    let finalTime = null;
+    if (time) {
+      const formatted = formatTimeInput(time.trim());
+      if (!formatted) return; // время введено, но невалидно — не сохраняем
+      finalTime = formatted;
+    }
 
     saved.current = true;
 
     const data = {
-      timeStr: formatted,
-      title: title.trim(),
+      timeStr:     finalTime,
+      title:       title.trim(),
       duration_min: duration ? parseInt(duration, 10) : null,
     };
 
@@ -73,10 +87,21 @@ export default function TaskRow({ task, onSave, onUpdate, spaceCount = 1 }) {
       onUpdate?.(task.id, data);
     } else {
       onSave?.(data);
+      // Сбросить поля для следующей задачи
+      setTime(''); setTitle(''); setDuration('');
+      setTimeFormatted(false);
     }
 
-    // Сбросить флаг чтобы позволить повторное сохранение при изменении
     setTimeout(() => { saved.current = false; }, 500);
+  };
+
+  /**
+   * Blur на контейнере — срабатывает когда фокус уходит ЗА ПРЕДЕЛЫ строки.
+   * Если фокус просто переходит между полями внутри строки — игнорируем.
+   */
+  const handleContainerBlur = (e) => {
+    if (containerRef.current?.contains(e.relatedTarget)) return;
+    handleSave();
   };
 
   const handleKeyDown = (e) => {
@@ -86,13 +111,41 @@ export default function TaskRow({ task, onSave, onUpdate, spaceCount = 1 }) {
     }
   };
 
-  const statusIcon = task?.status === 'done' ? '✅'
-    : task?.status === 'partial' ? '🔶'
-    : task?.status === 'skipped' ? '⏭'
+  /** Цикл статусов: pending → done → partial → skipped → pending */
+  const STATUS_CYCLE = ['pending', 'done', 'partial', 'skipped'];
+  const handleStatusClick = () => {
+    if (!task?.id) return;
+    const cur = task.status || 'pending';
+    const next = STATUS_CYCLE[(STATUS_CYCLE.indexOf(cur) + 1) % STATUS_CYCLE.length];
+    onStatus?.(task.id, next);
+  };
+
+  const statusIcon = task?.status === 'done'    ? '✅'
+    : task?.status === 'partial'  ? '🔶'
+    : task?.status === 'skipped'  ? '⏭'
+    : task?.id                    ? '⬜'  // pending — кликабельный
     : '';
 
+  const isTimeless = task?.id && !task?.timeStr;
+
   return (
-    <div className="flex items-start gap-2 py-2 px-3 border-b border-tg-hint/10">
+    <div
+      ref={containerRef}
+      onBlur={handleContainerBlur}
+      className="flex items-start gap-2 py-2 px-3 border-b border-tg-hint/10"
+    >
+      {/* Статус (только для существующих задач) */}
+      {task?.id && (
+        <button
+          onMouseDown={(e) => e.preventDefault()} // не уводить фокус
+          onClick={handleStatusClick}
+          className="shrink-0 text-base pt-1 leading-none"
+          title="Сменить статус"
+        >
+          {statusIcon}
+        </button>
+      )}
+
       {/* Время */}
       <input
         type="text"
@@ -114,12 +167,12 @@ export default function TaskRow({ task, onSave, onUpdate, spaceCount = 1 }) {
           placeholder="Задача..."
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onBlur={handleSave}
           onKeyDown={handleKeyDown}
           rows={1}
-          className="w-full bg-transparent resize-none text-sm text-tg-text
-            placeholder:text-tg-hint/50 focus:outline-none leading-relaxed py-1
-            overflow-hidden"
+          className={`w-full bg-transparent resize-none text-sm
+            ${isTimeless ? 'italic text-tg-hint' : 'text-tg-text'}
+            ${task?.status === 'done' || task?.status === 'skipped' ? 'line-through opacity-60' : ''}
+            placeholder:text-tg-hint/50 focus:outline-none leading-relaxed py-1 overflow-hidden`}
           style={{ minHeight: '28px' }}
           onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
         />
@@ -132,14 +185,22 @@ export default function TaskRow({ task, onSave, onUpdate, spaceCount = 1 }) {
         placeholder="мин"
         value={duration}
         onChange={(e) => setDuration(e.target.value.replace(/\D/g, ''))}
-        onBlur={handleSave}
         onKeyDown={handleKeyDown}
         className="w-10 shrink-0 text-center text-xs text-tg-hint bg-transparent
           border-b border-tg-hint/20 focus:outline-none focus:border-tg-button py-1"
       />
 
-      {/* Статус */}
-      {statusIcon && <span className="text-sm shrink-0 pt-1">{statusIcon}</span>}
+      {/* Удалить (только существующие задачи) */}
+      {task?.id && (
+        <button
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onDelete?.(task.id)}
+          className="shrink-0 text-tg-hint/40 hover:text-red-400 text-lg leading-none pt-0.5 px-0.5"
+          title="Удалить"
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }

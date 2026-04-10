@@ -118,12 +118,14 @@ export default function MiniCalendar({ selectedDate, onSelectDate, onClose }) {
     <>
       {/* Оверлей */}
       <div
-        className="fixed inset-0 bg-black/40 z-40"
+        className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center px-4"
         onClick={onClose}
-      />
-
-      {/* Bottom sheet */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-tg-bg rounded-t-2xl shadow-xl pb-safe">
+      >
+      {/* Карточка по центру — клик внутри не закрывает */}
+      <div
+        className="w-full max-w-sm bg-tg-bg rounded-2xl shadow-2xl z-50"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Шапка с навигацией по месяцам */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-tg-secondary">
           <button
@@ -154,7 +156,7 @@ export default function MiniCalendar({ selectedDate, onSelectDate, onClose }) {
         </div>
 
         {/* Сетка дней */}
-        <div className="grid grid-cols-7 px-2 pb-4">
+        <div className="grid grid-cols-7 px-2 pb-3">
           {cells.map((day, idx) => {
             if (!day) {
               return <div key={`e-${idx}`} />;
@@ -188,6 +190,7 @@ export default function MiniCalendar({ selectedDate, onSelectDate, onClose }) {
             );
           })}
         </div>
+      </div>
       </div>
     </>
   );

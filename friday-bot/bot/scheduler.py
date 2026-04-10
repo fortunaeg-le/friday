@@ -18,6 +18,7 @@ from db.crud import (
     get_tasks_for_completion_check,
     is_quiet_day_for_user,
     get_pending_subtasks_for_user,
+    get_partial_tasks_for_user,
 )
 
 # In-memory множество task_id для которых уже отправлена проверка выполнения
@@ -28,7 +29,7 @@ _sent_window_suggestions: set[tuple[int, str]] = set()
 from bot.notifications.morning_summary import send_morning_summary
 from bot.notifications.task_reminder import send_task_reminder
 from bot.notifications.completion_check import compute_check_at, send_completion_check
-from bot.notifications.window_suggestion import find_free_windows, send_window_suggestion
+from bot.notifications.window_suggestion import find_free_windows, send_window_suggestion, send_partial_task_suggestion
 from bot.notifications.stats_report import send_stats_report
 from bot.notifications.quiet_day_summary import send_quiet_day_summary_request
 from bot.notifications.evening_reflection import send_evening_reflection_request
@@ -51,6 +52,10 @@ async def job_check_reminders(bot) -> None:
         for reminder in reminders:
             try:
                 user = reminder.task.user
+                # Задача уже выполнена — напоминание не нужно
+                if reminder.task.status in ("done", "skipped"):
+                    await mark_reminder_sent(session, reminder.id)
+                    continue
                 # Тихий день → не отправлять напоминания (только пометить как sent)
                 if await is_quiet_day_for_user(session, user.id, today):
                     await mark_reminder_sent(session, reminder.id)
@@ -153,17 +158,29 @@ async def job_check_window_suggestions(bot) -> None:
             # Ищем подходящую pending подзадачу
             gap_min = int((window_end - window_start).total_seconds() / 60)
             subtasks = await get_pending_subtasks_for_user(session, user.id)
-            if not subtasks:
+
+            # Также включаем частично выполненные задачи дня
+            partial_tasks = await get_partial_tasks_for_user(session, user.id)
+
+            if not subtasks and not partial_tasks:
                 continue
 
             # Предпочитаем подзадачу, укладывающуюся в окно
-            subtask = next(
-                (s for s in subtasks if s.duration_min and s.duration_min <= gap_min),
-                subtasks[0],
-            )
+            subtask = None
+            if subtasks:
+                subtask = next(
+                    (s for s in subtasks if s.duration_min and s.duration_min <= gap_min),
+                    subtasks[0],
+                )
 
             try:
-                sent = await send_window_suggestion(bot, user, subtask, window_start, window_end)
+                if subtask:
+                    sent = await send_window_suggestion(bot, user, subtask, window_start, window_end)
+                elif partial_tasks:
+                    # Нет подзадач — предложить вернуться к незавершённой задаче
+                    sent = await send_partial_task_suggestion(bot, user, partial_tasks[0], window_start, window_end)
+                else:
+                    sent = False
                 if sent:
                     _sent_window_suggestions.add(dedup_key)
             except Exception as exc:
@@ -265,11 +282,11 @@ def setup_scheduler(bot_app: Application) -> AsyncIOScheduler:
     bot = bot_app.bot
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # Напоминания — каждую минуту
+    # Напоминания — каждые 15 секунд для быстрого отклика
     scheduler.add_job(
         job_check_reminders,
         trigger="interval",
-        minutes=1,
+        seconds=15,
         args=[bot],
         id="check_reminders",
         replace_existing=True,

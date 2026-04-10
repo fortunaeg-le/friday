@@ -6,7 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import get_session
-from db.crud import create_task, get_tasks_by_date, update_task, get_user_by_telegram_id, ensure_task_reminder
+from db.crud import (
+    create_task, get_tasks_by_date, update_task,
+    get_user_by_telegram_id, ensure_task_reminder,
+    delete_task, get_partial_tasks_for_user,
+)
 from api.schemas.tasks import TaskCreate, TaskUpdate, TaskResponse
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -43,6 +47,7 @@ async def add_task(
         user_id=user.id,
         title=body.title,
         scheduled_at=body.scheduled_at,
+        task_date=body.task_date,
         duration_min=body.duration_min,
         category=body.category,
         description=body.description,
@@ -67,6 +72,30 @@ async def patch_task(
     if task is None:
         raise HTTPException(status_code=404, detail="Задача не найдена")
 
-    # Пересоздать напоминание при обновлении (время могло измениться)
-    await ensure_task_reminder(session, task)
+    # Не пересоздавать напоминание если задача уже выполнена
+    if task.status not in ("done", "skipped"):
+        await ensure_task_reminder(session, task)
     return task
+
+
+@router.delete("/{task_id}", status_code=204)
+async def remove_task(
+    task_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Удалить задачу."""
+    ok = await delete_task(session, task_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+
+
+@router.get("/partial", response_model=list[TaskResponse])
+async def list_partial_tasks(
+    telegram_id: int = Query(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """Получить частично выполненные задачи пользователя."""
+    user = await get_user_by_telegram_id(session, telegram_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    return await get_partial_tasks_for_user(session, user.id)
