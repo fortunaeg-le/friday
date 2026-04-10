@@ -55,6 +55,32 @@ export function updateTask(taskId, updates) {
   });
 }
 
+/** Удалить задачу */
+export function deleteTask(taskId) {
+  return apiRequest(`/tasks/${taskId}`, { method: 'DELETE' });
+}
+
+/** Получить частично выполненные задачи пользователя */
+export function fetchPartialTasks() {
+  const telegramId = getTelegramId();
+  return apiRequest(`/tasks/partial?telegram_id=${telegramId}`);
+}
+
+/** Удалить проект */
+export function deleteProject(projectId) {
+  const telegramId = getTelegramId();
+  return apiRequest(`/projects/${projectId}?telegram_id=${telegramId}`, { method: 'DELETE' });
+}
+
+/** Обновить проект (название, дедлайн, статус) */
+export function updateProject(projectId, updates) {
+  const telegramId = getTelegramId();
+  return apiRequest(`/projects/${projectId}?telegram_id=${telegramId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+}
+
 /** Получить данные календаря для диапазона дат */
 export function fetchCalendar(fromDate, toDate) {
   const telegramId = getTelegramId();

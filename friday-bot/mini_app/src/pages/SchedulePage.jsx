@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import TaskRow from '../components/TaskRow';
 import MiniCalendar from '../components/MiniCalendar';
-import { fetchTasks, createTask, updateTask } from '../api/client';
+import { fetchTasks, createTask, updateTask, deleteTask } from '../api/client';
 import { formatDateDisplay, toISODate } from '../utils/time';
 
 /** Сдвинуть дату на N дней */
@@ -13,9 +13,8 @@ function shiftDate(date, days) {
 
 /**
  * Извлечь строку времени HH:MM из scheduled_at.
- * Сервер хранит время в UTC без суффикса 'Z'; добавляем его чтобы JS
- * не интерпретировал строку как локальное время и корректно конвертировал
- * UTC → локальное время пользователя.
+ * Сервер хранит UTC без 'Z' — добавляем его, чтобы JS корректно
+ * конвертировал UTC → локальное время пользователя.
  */
 function timeFromScheduled(scheduled_at) {
   if (!scheduled_at) return '';
@@ -27,14 +26,14 @@ function timeFromScheduled(scheduled_at) {
 }
 
 export default function SchedulePage() {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [currentDate, setCurrentDate]   = useState(new Date());
+  const [tasks, setTasks]               = useState([]);
+  const [loading, setLoading]           = useState(false);
+  const [error, setError]               = useState(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const [spaceCount, setSpaceCount] = useState(() => {
-    return parseInt(localStorage.getItem('time_space_count') || '1', 10);
-  });
+  const [spaceCount] = useState(() =>
+    parseInt(localStorage.getItem('time_space_count') || '1', 10)
+  );
 
   /** Загрузка задач на выбранную дату */
   const loadTasks = useCallback(async (date) => {
@@ -42,10 +41,14 @@ export default function SchedulePage() {
     setError(null);
     try {
       const data = await fetchTasks(toISODate(date));
-      setTasks(data.map((t) => ({
-        ...t,
-        timeStr: timeFromScheduled(t.scheduled_at),
-      })));
+      // Задачи со временем сортируются бэкендом; задачи без времени — в конец
+      const timed    = data.filter((t) => t.scheduled_at).map((t) => ({
+        ...t, timeStr: timeFromScheduled(t.scheduled_at),
+      }));
+      const timeless = data.filter((t) => !t.scheduled_at).map((t) => ({
+        ...t, timeStr: '',
+      }));
+      setTasks([...timed, ...timeless]);
     } catch (err) {
       console.error('Ошибка загрузки задач:', err);
       setError(`Загрузка: ${err.message}`);
@@ -55,33 +58,29 @@ export default function SchedulePage() {
     }
   }, []);
 
-  useEffect(() => {
-    loadTasks(currentDate);
-  }, [currentDate, loadTasks]);
+  useEffect(() => { loadTasks(currentDate); }, [currentDate, loadTasks]);
 
-  /** Навигация по датам */
-  const goBack = () => setCurrentDate((d) => shiftDate(d, -1));
+  const goBack    = () => setCurrentDate((d) => shiftDate(d, -1));
   const goForward = () => setCurrentDate((d) => shiftDate(d, 1));
-  const goToday = () => setCurrentDate(new Date());
-
-  /** Выбор даты из мини-календаря */
-  const handleCalendarSelect = (date) => {
-    setCurrentDate(date);
-  };
+  const goToday   = () => setCurrentDate(new Date());
 
   /** Сохранение новой задачи */
   const handleSave = async (data) => {
-    const dateStr = toISODate(currentDate);
-    const [h, m] = data.timeStr.split(':').map(Number);
-    const scheduled = new Date(currentDate);
-    scheduled.setHours(h, m, 0, 0);
+    let scheduled_at = null;
+    if (data.timeStr) {
+      const [h, m] = data.timeStr.split(':').map(Number);
+      const scheduled = new Date(currentDate);
+      scheduled.setHours(h, m, 0, 0);
+      scheduled_at = scheduled.toISOString();
+    }
 
     try {
       setError(null);
-      const created = await createTask({
-        title: data.title,
-        scheduled_at: scheduled.toISOString(),
+      await createTask({
+        title:        data.title,
+        scheduled_at,
         duration_min: data.duration_min,
+        task_date:    toISODate(currentDate),
       });
       loadTasks(currentDate);
     } catch (err) {
@@ -92,18 +91,48 @@ export default function SchedulePage() {
 
   /** Обновление существующей задачи */
   const handleUpdate = async (taskId, data) => {
-    const [h, m] = data.timeStr.split(':').map(Number);
-    const scheduled = new Date(currentDate);
-    scheduled.setHours(h, m, 0, 0);
+    let scheduled_at = null;
+    if (data.timeStr) {
+      const [h, m] = data.timeStr.split(':').map(Number);
+      const scheduled = new Date(currentDate);
+      scheduled.setHours(h, m, 0, 0);
+      scheduled_at = scheduled.toISOString();
+    }
 
     try {
       await updateTask(taskId, {
-        title: data.title,
-        scheduled_at: scheduled.toISOString(),
+        title:        data.title,
+        scheduled_at,
         duration_min: data.duration_min,
       });
+      loadTasks(currentDate);
     } catch (err) {
       console.error('Ошибка обновления задачи:', err);
+    }
+  };
+
+  /** Смена статуса задачи */
+  const handleStatus = async (taskId, status) => {
+    // Оптимистичное обновление
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, status } : t))
+    );
+    try {
+      await updateTask(taskId, { status });
+    } catch (err) {
+      console.error('Ошибка смены статуса:', err);
+      loadTasks(currentDate); // откат
+    }
+  };
+
+  /** Удаление задачи */
+  const handleDelete = async (taskId) => {
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    try {
+      await deleteTask(taskId);
+    } catch (err) {
+      console.error('Ошибка удаления задачи:', err);
+      loadTasks(currentDate);
     }
   };
 
@@ -113,7 +142,7 @@ export default function SchedulePage() {
     <div className="flex flex-col h-full">
       {/* Навигация по датам */}
       <div className="flex items-center justify-between px-4 py-3 bg-tg-secondary">
-        <button onClick={goBack} className="text-tg-button text-xl px-2">◀</button>
+        <button onClick={goBack}    className="text-tg-button text-xl px-2">◀</button>
         <button
           onClick={() => setCalendarOpen(true)}
           className={`text-sm font-medium ${isToday ? 'text-tg-button' : 'text-tg-text'}`}
@@ -123,14 +152,10 @@ export default function SchedulePage() {
         <button onClick={goForward} className="text-tg-button text-xl px-2">▶</button>
       </div>
 
-      {/* Ошибки */}
       {error && (
-        <div className="mx-3 mt-2 p-2 bg-red-100 text-red-700 text-xs rounded">
-          {error}
-        </div>
+        <div className="mx-3 mt-2 p-2 bg-red-100 text-red-700 text-xs rounded">{error}</div>
       )}
 
-      {/* Список задач */}
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-8">
@@ -143,6 +168,8 @@ export default function SchedulePage() {
                 key={task.id}
                 task={task}
                 onUpdate={handleUpdate}
+                onDelete={handleDelete}
+                onStatus={handleStatus}
                 spaceCount={spaceCount}
               />
             ))}
@@ -164,11 +191,11 @@ export default function SchedulePage() {
           </>
         )}
       </div>
-      {/* Мини-календарь */}
+
       {calendarOpen && (
         <MiniCalendar
           selectedDate={currentDate}
-          onSelectDate={handleCalendarSelect}
+          onSelectDate={(date) => setCurrentDate(date)}
           onClose={() => setCalendarOpen(false)}
         />
       )}

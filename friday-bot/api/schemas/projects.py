@@ -43,4 +43,12 @@ class ProjectResponse(BaseModel):
 
 
 class SubtaskStatusUpdate(BaseModel):
-    status: str  # pending | done | skipped
+    status: str | None = None     # pending | done | skipped
+    title: str | None = None      # для переименования подзадачи
+
+
+class ProjectUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    deadline: date | None = None
+    status: str | None = None     # active | completed | archived

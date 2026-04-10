@@ -3,7 +3,7 @@
  * Возвращает отформатированную строку или null если ввод невалиден.
  */
 export function formatTimeInput(raw) {
-  const text = raw.trim().replace(/[.\-]/g, ':');
+  const text = raw.trim().replace(/[.,\-]/g, ':');
 
   // Формат HH:MM
   if (text.includes(':')) {

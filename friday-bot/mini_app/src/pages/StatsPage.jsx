@@ -100,15 +100,48 @@ function ShareButton({ cardRef }) {
     setSharing(true);
     try {
       const html2canvas = (await import('html2canvas')).default;
-      const canvas = await html2canvas(cardRef.current, { useCORS: true, scale: 2 });
+
+      // Получить актуальные значения CSS-переменных Telegram темы
+      const rootStyle  = getComputedStyle(document.documentElement);
+      const bgColor    = rootStyle.getPropertyValue('--tg-theme-bg-color').trim()           || '#18181b';
+      const textColor  = rootStyle.getPropertyValue('--tg-theme-text-color').trim()         || '#ffffff';
+      const secondaryBg= rootStyle.getPropertyValue('--tg-theme-secondary-bg-color').trim() || '#27272a';
+      const buttonColor= rootStyle.getPropertyValue('--tg-theme-button-color').trim()       || '#3478f6';
+      const hintColor  = rootStyle.getPropertyValue('--tg-theme-hint-color').trim()         || '#71717a';
+
+      const canvas = await html2canvas(cardRef.current, {
+        useCORS: true,
+        scale: 2,
+        backgroundColor: bgColor,
+        onclone: (_doc, el) => {
+          // Пробросить CSS-переменные в клонированный элемент
+          el.style.setProperty('--tg-theme-bg-color',            bgColor);
+          el.style.setProperty('--tg-theme-text-color',          textColor);
+          el.style.setProperty('--tg-theme-secondary-bg-color',  secondaryBg);
+          el.style.setProperty('--tg-theme-button-color',        buttonColor);
+          el.style.setProperty('--tg-theme-hint-color',          hintColor);
+          el.style.backgroundColor = bgColor;
+          el.style.color           = textColor;
+          el.style.padding         = '16px';
+          el.style.borderRadius    = '0';
+        },
+      });
+
       canvas.toBlob((blob) => {
         if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'friday-stats.png';
-        a.click();
-        URL.revokeObjectURL(url);
+        // Попробовать share API (iOS Safari, Android Chrome)
+        const file = new File([blob], 'friday-stats.png', { type: 'image/png' });
+        if (navigator.canShare?.({ files: [file] })) {
+          navigator.share({ files: [file], title: 'Моя статистика Friday' }).catch(() => {});
+        } else {
+          // Fallback — скачать файл
+          const url = URL.createObjectURL(blob);
+          const a   = document.createElement('a');
+          a.href     = url;
+          a.download = 'friday-stats.png';
+          a.click();
+          URL.revokeObjectURL(url);
+        }
       }, 'image/png');
     } catch (e) {
       console.error('Share error', e);

@@ -125,6 +125,7 @@ class Task(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     scheduled_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    task_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # дата задачи (для задач без времени)
     duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)  # работа | здоровье | личное | другое
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | done | partial | skipped

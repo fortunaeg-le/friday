@@ -2,7 +2,7 @@
 
 from datetime import datetime, date, timedelta
 
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, or_, func, delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -42,6 +42,7 @@ async def create_task(
     user_id: int,
     title: str,
     scheduled_at: datetime | None = None,
+    task_date: date | None = None,
     duration_min: int | None = None,
     category: str | None = None,
     description: str | None = None,
@@ -51,10 +52,15 @@ async def create_task(
     if scheduled_at and scheduled_at.tzinfo is not None:
         scheduled_at = scheduled_at.replace(tzinfo=None)
 
+    # task_date: если не передана, берём из scheduled_at
+    if task_date is None and scheduled_at is not None:
+        task_date = scheduled_at.date()
+
     task = Task(
         user_id=user_id,
         title=title,
         scheduled_at=scheduled_at,
+        task_date=task_date,
         duration_min=duration_min,
         category=category,
         description=description,
@@ -66,7 +72,11 @@ async def create_task(
 
 
 async def get_tasks_by_date(session: AsyncSession, user_id: int, target_date: date) -> list[Task]:
-    """Получить все задачи пользователя на указанную дату, отсортированные по времени."""
+    """Получить все задачи пользователя на указанную дату, отсортированные по времени.
+
+    Возвращает как задачи со временем (scheduled_at), так и задачи без времени (task_date).
+    Задачи без времени идут в конце.
+    """
     day_start = datetime.combine(target_date, datetime.min.time())
     day_end = datetime.combine(target_date, datetime.max.time())
 
@@ -75,11 +85,38 @@ async def get_tasks_by_date(session: AsyncSession, user_id: int, target_date: da
         .where(
             and_(
                 Task.user_id == user_id,
-                Task.scheduled_at >= day_start,
-                Task.scheduled_at <= day_end,
+                or_(
+                    # Задачи со временем — попадают в диапазон дня
+                    and_(Task.scheduled_at >= day_start, Task.scheduled_at <= day_end),
+                    # Задачи без времени — привязаны к дате через task_date
+                    and_(Task.scheduled_at.is_(None), Task.task_date == target_date),
+                ),
             )
         )
-        .order_by(Task.scheduled_at)
+        .order_by(Task.scheduled_at.asc().nullslast(), Task.created_at.asc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def delete_task(session: AsyncSession, task_id: int) -> bool:
+    """Удалить задачу по id. Возвращает True если удалена."""
+    stmt = select(Task).where(Task.id == task_id)
+    result = await session.execute(stmt)
+    task = result.scalar_one_or_none()
+    if task is None:
+        return False
+    await session.delete(task)
+    await session.commit()
+    return True
+
+
+async def get_partial_tasks_for_user(session: AsyncSession, user_id: int) -> list[Task]:
+    """Получить задачи со статусом 'partial' для пользователя."""
+    stmt = (
+        select(Task)
+        .where(and_(Task.user_id == user_id, Task.status == "partial"))
+        .order_by(Task.scheduled_at.desc().nullslast(), Task.created_at.desc())
     )
     result = await session.execute(stmt)
     return list(result.scalars().all())
@@ -500,6 +537,56 @@ async def get_project_by_id(
     )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def delete_project(session: AsyncSession, project_id: int) -> bool:
+    """Удалить проект и все его подзадачи. Возвращает True если удалён."""
+    stmt = select(Project).where(Project.id == project_id)
+    result = await session.execute(stmt)
+    project = result.scalar_one_or_none()
+    if project is None:
+        return False
+    await session.delete(project)
+    await session.commit()
+    return True
+
+
+async def update_project(
+    session: AsyncSession,
+    project_id: int,
+    **kwargs,
+) -> Project | None:
+    """Обновить произвольные поля проекта."""
+    stmt = select(Project).where(Project.id == project_id)
+    result = await session.execute(stmt)
+    project = result.scalar_one_or_none()
+    if project is None:
+        return None
+    for key, value in kwargs.items():
+        if hasattr(project, key) and value is not None:
+            setattr(project, key, value)
+    await session.commit()
+    await session.refresh(project)
+    return project
+
+
+async def update_subtask(
+    session: AsyncSession,
+    subtask_id: int,
+    **kwargs,
+) -> ProjectSubtask | None:
+    """Обновить поля подзадачи (статус, название и т.д.)."""
+    stmt = select(ProjectSubtask).where(ProjectSubtask.id == subtask_id)
+    result = await session.execute(stmt)
+    subtask = result.scalar_one_or_none()
+    if subtask is None:
+        return None
+    for key, value in kwargs.items():
+        if hasattr(subtask, key) and value is not None:
+            setattr(subtask, key, value)
+    await session.commit()
+    await session.refresh(subtask)
+    return subtask
 
 
 async def get_pending_subtasks_for_user(
