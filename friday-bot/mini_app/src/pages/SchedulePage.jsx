@@ -11,10 +11,16 @@ function shiftDate(date, days) {
   return d;
 }
 
-/** Извлечь строку времени HH:MM из scheduled_at */
+/**
+ * Извлечь строку времени HH:MM из scheduled_at.
+ * Сервер хранит время в UTC без суффикса 'Z'; добавляем его чтобы JS
+ * не интерпретировал строку как локальное время и корректно конвертировал
+ * UTC → локальное время пользователя.
+ */
 function timeFromScheduled(scheduled_at) {
   if (!scheduled_at) return '';
-  const d = new Date(scheduled_at);
+  const utcStr = scheduled_at.endsWith('Z') ? scheduled_at : scheduled_at + 'Z';
+  const d = new Date(utcStr);
   const h = String(d.getHours()).padStart(2, '0');
   const m = String(d.getMinutes()).padStart(2, '0');
   return `${h}:${m}`;
@@ -26,6 +32,9 @@ export default function SchedulePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [spaceCount, setSpaceCount] = useState(() => {
+    return parseInt(localStorage.getItem('time_space_count') || '1', 10);
+  });
 
   /** Загрузка задач на выбранную дату */
   const loadTasks = useCallback(async (date) => {
@@ -134,6 +143,7 @@ export default function SchedulePage() {
                 key={task.id}
                 task={task}
                 onUpdate={handleUpdate}
+                spaceCount={spaceCount}
               />
             ))}
 
@@ -142,6 +152,7 @@ export default function SchedulePage() {
               key={`new-${toISODate(currentDate)}`}
               task={null}
               onSave={handleSave}
+              spaceCount={spaceCount}
             />
 
             {tasks.length === 0 && !loading && (

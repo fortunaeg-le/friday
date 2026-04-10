@@ -4,8 +4,9 @@ import { formatTimeInput } from '../utils/time';
 /**
  * Строка задачи в ежедневнике.
  * Поля: время (автоформатирование), название, длительность (опц.).
+ * spaceCount — сколько пробелов нужно ввести для автозаполнения нулей (1 или 2).
  */
-export default function TaskRow({ task, onSave, onUpdate }) {
+export default function TaskRow({ task, onSave, onUpdate, spaceCount = 1 }) {
   const [time, setTime] = useState(task?.timeStr || '');
   const [title, setTitle] = useState(task?.title || '');
   const [duration, setDuration] = useState(task?.duration_min ?? '');
@@ -23,13 +24,33 @@ export default function TaskRow({ task, onSave, onUpdate }) {
   /** Автоформатирование времени при потере фокуса */
   const handleTimeBlur = () => {
     if (!time) return;
-    const formatted = formatTimeInput(time);
+    const formatted = formatTimeInput(time.trim());
     if (formatted) {
       setTime(formatted);
       setTimeFormatted(true);
       // Фокус переходит на поле задачи
       titleRef.current?.focus();
     }
+  };
+
+  /** Обработка ввода времени: пробельный триггер автозаполнения */
+  const handleTimeChange = (e) => {
+    const val = e.target.value;
+    const trigger = ' '.repeat(spaceCount);
+    if (val.endsWith(trigger)) {
+      const textPart = val.trimEnd();
+      if (textPart.length > 0) {
+        const formatted = formatTimeInput(textPart);
+        if (formatted) {
+          setTime(formatted);
+          setTimeFormatted(true);
+          titleRef.current?.focus();
+          return;
+        }
+      }
+    }
+    setTime(val);
+    setTimeFormatted(false);
   };
 
   /** Сохранение при потере фокуса или Enter */
@@ -75,10 +96,10 @@ export default function TaskRow({ task, onSave, onUpdate }) {
       {/* Время */}
       <input
         type="text"
-        inputMode="numeric"
+        inputMode="decimal"
         placeholder="09:00"
         value={time}
-        onChange={(e) => { setTime(e.target.value); setTimeFormatted(false); }}
+        onChange={handleTimeChange}
         onBlur={handleTimeBlur}
         onKeyDown={(e) => { if (e.key === 'Enter') handleTimeBlur(); }}
         className={`w-14 shrink-0 text-center bg-transparent border-b

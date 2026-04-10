@@ -105,6 +105,46 @@ function SettingRow({ setting, onUpdate }) {
   );
 }
 
+function InputPreferences() {
+  const [spaceCount, setSpaceCount] = useState(() => {
+    return parseInt(localStorage.getItem('time_space_count') || '1', 10);
+  });
+
+  const handleChange = (val) => {
+    setSpaceCount(val);
+    localStorage.setItem('time_space_count', String(val));
+  };
+
+  return (
+    <div className="bg-tg-secondary rounded-xl p-4 mb-3">
+      <span className="text-tg-text font-medium">⌨️ Ввод времени</span>
+      <div className="border-t border-tg-hint/10 pt-2 mt-3">
+        <p className="text-sm text-tg-hint mb-2">
+          Автозаполнение нулей при вводе пробела
+        </p>
+        <div className="flex gap-2">
+          {[1, 2].map((n) => (
+            <button
+              key={n}
+              onClick={() => handleChange(n)}
+              className={`flex-1 py-1.5 rounded-lg text-sm border transition-colors ${
+                spaceCount === n
+                  ? 'bg-tg-button text-white border-tg-button'
+                  : 'border-tg-hint/30 text-tg-hint'
+              }`}
+            >
+              {n === 1 ? '1 пробел' : '2 пробела'}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-tg-hint/60 mt-2">
+          Введи цифры времени (9, 17, 1700) и нажми пробел {spaceCount === 2 ? 'дважды' : ''} — время заполнится автоматически
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -147,6 +187,7 @@ export default function SettingsPage() {
   return (
     <div className="p-4">
       <h1 className="text-lg font-semibold text-tg-text mb-4">Настройки</h1>
+      <InputPreferences />
       {settings.map((s) => (
         <SettingRow key={s.type} setting={s} onUpdate={handleUpdate} />
       ))}
