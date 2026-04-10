@@ -429,6 +429,30 @@ async def get_project_by_id(
     return result.scalar_one_or_none()
 
 
+async def get_pending_subtasks_for_user(
+    session: AsyncSession,
+    user_id: int,
+    exclude_id: int | None = None,
+) -> list[ProjectSubtask]:
+    """Получить все pending подзадачи из активных проектов пользователя."""
+    stmt = (
+        select(ProjectSubtask)
+        .join(Project, ProjectSubtask.project_id == Project.id)
+        .where(
+            and_(
+                Project.user_id == user_id,
+                Project.status == "active",
+                ProjectSubtask.status == "pending",
+            )
+        )
+        .order_by(ProjectSubtask.order_index, ProjectSubtask.created_at)
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(ProjectSubtask.id != exclude_id)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def get_projects_near_deadline(
     session: AsyncSession,
     user_id: int,

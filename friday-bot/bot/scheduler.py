@@ -17,13 +17,18 @@ from db.crud import (
     get_tasks_by_date,
     get_tasks_for_completion_check,
     is_quiet_day_for_user,
+    get_pending_subtasks_for_user,
 )
 
 # In-memory множество task_id для которых уже отправлена проверка выполнения
 _sent_completion_checks: set[int] = set()
+
+# In-memory: (user_id, window_start_iso) для дедупликации рекомендаций окон
+_sent_window_suggestions: set[tuple[int, str]] = set()
 from bot.notifications.morning_summary import send_morning_summary
 from bot.notifications.task_reminder import send_task_reminder
 from bot.notifications.completion_check import compute_check_at, send_completion_check
+from bot.notifications.window_suggestion import find_free_windows, send_window_suggestion
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +111,51 @@ async def job_check_completions(bot) -> None:
                         )
 
 
+async def job_check_window_suggestions(bot) -> None:
+    """Каждые 30 минут: найти свободные окна и предложить подзадачу."""
+    now = datetime.utcnow()
+    today = now.date()
+    async with async_session() as session:
+        users = await get_all_users(session)
+        for user in users:
+            # Не отправлять в тихий день
+            if await is_quiet_day_for_user(session, user.id, today):
+                continue
+
+            tasks = await get_tasks_by_date(session, user.id, today)
+            windows = find_free_windows(tasks, settings.default_task_duration)
+            if not windows:
+                continue
+
+            # Берём первое актуальное окно
+            window_start, window_end = windows[0]
+            dedup_key = (user.id, window_start.strftime("%Y-%m-%dT%H:%M"))
+            if dedup_key in _sent_window_suggestions:
+                continue
+
+            # Ищем подходящую pending подзадачу
+            gap_min = int((window_end - window_start).total_seconds() / 60)
+            subtasks = await get_pending_subtasks_for_user(session, user.id)
+            if not subtasks:
+                continue
+
+            # Предпочитаем подзадачу, укладывающуюся в окно
+            subtask = next(
+                (s for s in subtasks if s.duration_min and s.duration_min <= gap_min),
+                subtasks[0],
+            )
+
+            try:
+                sent = await send_window_suggestion(bot, user, subtask, window_start, window_end)
+                if sent:
+                    _sent_window_suggestions.add(dedup_key)
+            except Exception as exc:
+                logger.error(
+                    "Ошибка window_suggestion user=%d: %s",
+                    user.telegram_id, exc,
+                )
+
+
 async def job_generate_reminders() -> None:
     """Ежедневно в 00:05 UTC: создать напоминания для задач на завтра."""
     tomorrow = date.today() + timedelta(days=1)
@@ -167,6 +217,16 @@ def setup_scheduler(bot_app: Application) -> AsyncIOScheduler:
         job_generate_reminders,
         trigger=CronTrigger(hour=0, minute=5, timezone="UTC"),
         id="generate_reminders",
+        replace_existing=True,
+    )
+
+    # Рекомендации в свободные окна — каждые 30 минут
+    scheduler.add_job(
+        job_check_window_suggestions,
+        trigger="interval",
+        minutes=30,
+        args=[bot],
+        id="window_suggestions",
         replace_existing=True,
     )
 
