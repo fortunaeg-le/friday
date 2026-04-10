@@ -17,6 +17,15 @@ from bot.handlers.suggestion import (
     suggestion_another_handler,
 )
 from bot.handlers.stats import stats_handler
+from bot.handlers.quiet_days import (
+    quiet_days_handler,
+    qd_weekday_handler,
+    qd_add_date_handler,
+)
+from bot.notifications.quiet_day_summary import (
+    qd_summary_text_handler,
+    qd_summary_skip_handler,
+)
 
 
 def create_bot_app() -> Application:
@@ -37,6 +46,12 @@ def create_bot_app() -> Application:
     application.add_handler(suggestion_skip_handler)
     application.add_handler(suggestion_another_handler)
     application.add_handler(stats_handler)
+    application.add_handler(quiet_days_handler)
+    application.add_handler(qd_weekday_handler)
+    application.add_handler(qd_add_date_handler)
+    application.add_handler(qd_summary_skip_handler)
+    # qd_summary_text_handler — низкий приоритет (group=1): перехватывает только ожидающих
+    application.add_handler(qd_summary_text_handler, group=1)
     # ConversationHandler должен быть раньше простых callback-хендлеров
     application.add_handler(completion_partial_handler)
     application.add_handler(completion_done_handler)

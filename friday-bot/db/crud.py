@@ -527,3 +527,52 @@ async def is_quiet_day_for_user(
         if qd.day_of_week is not None and qd.day_of_week == check_date.weekday():
             return True
     return False
+
+
+async def get_quiet_days(session: AsyncSession, user_id: int) -> list[QuietDay]:
+    """Получить все активные тихие дни пользователя."""
+    stmt = select(QuietDay).where(
+        and_(QuietDay.user_id == user_id, QuietDay.is_active == True)  # noqa: E712
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def set_quiet_day(
+    session: AsyncSession,
+    user_id: int,
+    day_of_week: int | None = None,
+    specific_date: date | None = None,
+) -> tuple[QuietDay, bool]:
+    """Переключить тихий день. Возвращает (QuietDay, is_now_active).
+
+    Если уже активен — деактивирует (toggle). Если нет — создаёт/активирует.
+    """
+    # Поиск существующей записи
+    if day_of_week is not None:
+        stmt = select(QuietDay).where(
+            and_(QuietDay.user_id == user_id, QuietDay.day_of_week == day_of_week)
+        )
+    else:
+        stmt = select(QuietDay).where(
+            and_(QuietDay.user_id == user_id, QuietDay.specific_date == specific_date)
+        )
+    result = await session.execute(stmt)
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.is_active = not existing.is_active
+        await session.commit()
+        await session.refresh(existing)
+        return existing, existing.is_active
+
+    qd = QuietDay(
+        user_id=user_id,
+        day_of_week=day_of_week,
+        specific_date=specific_date,
+        is_active=True,
+    )
+    session.add(qd)
+    await session.commit()
+    await session.refresh(qd)
+    return qd, True

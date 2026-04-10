@@ -21,9 +21,10 @@ def _format_task_line(task) -> str:
     return f"  {time_str} — {task.title}{dur}"
 
 
-async def send_morning_summary(bot: Bot, user: User, session) -> bool:
+async def send_morning_summary(bot: Bot, user: User, session, silent: bool = False) -> bool:
     """Сформировать и отправить утреннюю сводку пользователю.
 
+    silent=True → тихий день: отправляем БЕЗ ЗВУКА (disable_notification=True).
     Возвращает True если сообщение отправлено, False если нечего показывать.
     """
     today = date.today()
@@ -48,12 +49,11 @@ async def send_morning_summary(bot: Bot, user: User, session) -> bool:
 
     text = "\n".join(lines)
 
-    # Утренняя сводка по умолчанию со звуком (sound_enabled=True в notification_defaults)
     await bot.send_message(
         chat_id=user.telegram_id,
         text=text,
         parse_mode="HTML",
-        disable_notification=False,
+        disable_notification=silent,  # тихий день → без звука
     )
-    logger.info("Утренняя сводка отправлена пользователю %d", user.telegram_id)
+    logger.info("Утренняя сводка отправлена пользователю %d (silent=%s)", user.telegram_id, silent)
     return True
